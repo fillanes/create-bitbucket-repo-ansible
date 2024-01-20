@@ -1,0 +1,159 @@
+---
+- name: Create repository in bitbucket cloud
+  hosts: localhost
+
+  vars:
+    repository_name: <repository-name>
+    workspace: <workspace>
+    project_key: <PROJECT-KEY>
+    prod_branch: <master>
+    qa_branch: <qa>
+    dev_branch: <development>
+    auth_token: <Bearer token> # or "Basic token" with username:app-password (https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/) in base64.
+
+  tasks:
+    # First create the repository with default definition in the body
+    - name: Create repository {{ repository_name }} 
+      uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+          Authorization: '{{ auth_token }}'
+        body_format: json
+        body: '{"is_private":true,"scm":"git","size":2154,"has_issues":false,"has_wiki":false,"fork_policy":"no_public_forks","project":{"key":"{{ project_key }}"},"mainbranch":{"type":"{{ prod_branch }}"}}'
+        status_code: 200
+      register: response
+
+    # Add webhooks for the configuration of the repository. 
+    # In this case check all cases, but for issue events, need advanced scopes in Bearer token or Basic token. 
+    # Check the documentation of bitbucket API (https://developer.atlassian.com/cloud/bitbucket/rest/api-group-repositories/#api-repositories-workspace-repo-slug-hooks-post)
+    - name: Add webhook to the repository {{ repository_name }}
+      ansible.builtin.uri:
+        url: 'https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}/hooks'
+        method: POST
+        body:
+          description: webhook 1
+          url: 'http://webhook-1-url'
+          active: true
+          events:
+            - 'repo:push'
+            - 'repo:fork'
+            - 'repo:updated'
+            - 'repo:commit_comment_created'
+            - 'repo:commit_status_created'
+            - 'repo:commit_status_updated'
+            - 'issue:created'
+            - 'issue:updated'
+            - 'issue:comment_created'
+            - 'pullrequest:created'
+            - 'pullrequest:updated'
+            - 'pullrequest:changes_request_created'
+            - 'pullrequest:changes_request_removed'
+            - 'pullrequest:approved'
+            - 'pullrequest:fulfilled'
+            - 'pullrequest:rejected'
+            - 'pullrequest:comment_created'
+            - 'pullrequest:comment_updated'
+            - 'pullrequest:comment_deleted'
+        body_format: json
+        status_code: 201
+        headers:
+          Authorization: '{{ auth_token }}'
+          Content-Type: application/json
+          Accept: application/json
+    
+    # Another definition for an extra webhook
+    - name: Add webhook to the repository {{ repository_name }}
+      ansible.builtin.uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}/hooks"
+        method: POST
+        body:
+          description: webhook 2
+          url: 'http://webhook-2-url'
+          active: true
+          events:
+            - 'repo:push'
+            - 'pullrequest:created'
+            - 'pullrequest:updated'
+            - 'pullrequest:approved'
+            - 'pullrequest:fulfilled'
+            - 'pullrequest:rejected'
+            - 'pullrequest:comment_created'
+            - 'pullrequest:comment_updated'
+        body_format: json
+        status_code: 201
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+          Authorization: '{{ auth_token }}'
+
+    # This step is for upload content defined in the body segment. Based on the documentation of bitbucket API, 
+    # the upload content always is in the main branch. So, nexts steps are create branches based on this one.
+    - name: Upload content to {{ prod_branch }}
+      ansible.builtin.uri:
+        url: https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}/src
+        method: POST
+        body:
+          README.md:
+            filename: src/README.md
+          .gitignore:
+            filename: .gitignore
+        body_format: form-multipart
+        status_code: 201
+        headers:
+          Content-Type: multipart/form-data
+          Authorization: '{{ auth_token }}'
+
+    # QA Branch is a previous branch of main or master. This step can be avoid if you want. For production
+    # environments y prefer three branchs.
+    - name: Create branch {{ qa_branch }}
+      ansible.builtin.uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}/refs/branches"
+        method: POST
+        body: '{"name":"{{ qa_branch }}","target":{"hash":"{{ prod_branch }}"}}'
+        body_format: json
+        status_code: 201
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+          Authorization: '{{ auth_token }}'
+
+    # Development branch or develop branch, what ever you want.
+    - name: Create branch {{ dev_branch }}
+      ansible.builtin.uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}/refs/branches"
+        method: POST
+        body: '{"name":"{{ dev_branch }}","target":{"hash":"{{ qa_branch }}"}}'
+        body_format: json
+        status_code: 201
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+          Authorization: '{{ auth_token }}'
+
+    # This task is for change the default branch model, and define master or main branch for production environment 
+    # and development or develop branch for development environment. 
+    - name: Change branch model {{ repository_name }}
+      uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ workspace }}/${{ repository_name }}/branching-model/settings"
+        method: PUT
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+          Authorization: '{{ auth_token }}'
+        body_format: json
+        body:
+          development:
+            name: '{{ dev_branch }}'
+            use_mainbranch: false
+            is_valid: true
+          production:
+            name: '{{ prod_branch }}'
+            use_mainbranch: false
+            is_valid: true
+            enabled: true
+        status_code: 200
+      register: response
+
