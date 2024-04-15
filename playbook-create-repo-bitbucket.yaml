@@ -93,7 +93,7 @@
     # So this step is added to the implementation, and later is change it.
     - name: Change branch model {{ repository_name }} by default
       uri:
-        url: "https://api.bitbucket.org/2.0/repositories/banco_ripley/{{ repository_name }}/branching-model/settings"
+        url: "https://api.bitbucket.org/2.0/repositories/{{ workspace }}/{{ repository_name }}/branching-model/settings"
         method: PUT
         headers:
           Content-Type: application/json
