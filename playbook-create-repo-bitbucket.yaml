@@ -89,6 +89,29 @@
           Accept: application/json
           Authorization: '{{ auth_token }}'
 
+    # This task is for change the default branch model. In some cases is necesary to change branching models to apply the script.
+    # So this step is added to the implementation, and later is change it.
+    - name: Change branch model {{ repository_name }} by default
+      uri:
+        url: "https://api.bitbucket.org/2.0/repositories/banco_ripley/{{ repository_name }}/branching-model/settings"
+        method: PUT
+        headers:
+          Content-Type: application/json
+          Accept: application/json
+          Authorization: '{{ auth_token }}'
+        body_format: json
+        body:
+          development:
+            use_mainbranch: true
+            is_valid: true
+          production:
+            name: '{{ prod_branch }}'
+            use_mainbranch: false
+            is_valid: true
+            enabled: false
+        status_code: 200
+      register: response
+
     # This step is for upload content defined in the body segment. Based on the documentation of bitbucket API, 
     # the upload content always is in the main branch. So, nexts steps are create branches based on this one.
     - name: Upload content to {{ prod_branch }}
